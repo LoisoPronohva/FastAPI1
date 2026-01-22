@@ -7,8 +7,10 @@ services:
       - "8000:8000"
     volumes:
       - ./app:/app/app
+      - ./requirements.txt:/app/requirements.txt
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/advertisements
+      - SECRET_KEY=your-super-secret-jwt-key-change-in-production
     depends_on:
       db:
         condition: service_healthy
@@ -18,6 +20,7 @@ services:
                sleep 1
              done &&
              echo 'PostgreSQL is ready!' &&
+             pip install -r requirements.txt &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -29,7 +32,6 @@ services:
     image: postgres:15-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     environment:
       - POSTGRES_DB=advertisements
       - POSTGRES_USER=postgres

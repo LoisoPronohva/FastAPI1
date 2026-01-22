@@ -1,8 +1,62 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
+from enum import Enum
 
 
+class UserRole(str, Enum):
+    USER = "user"
+    ADMIN = "admin"
+
+
+# User Schemas
+class UserBase(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: Optional[EmailStr] = None
+
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=6)
+
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    email: Optional[EmailStr] = None
+    password: Optional[str] = Field(None, min_length=6)
+
+
+class UserInDB(UserBase):
+    id: int
+    is_active: bool
+    role: UserRole
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserPublic(UserInDB):
+    pass
+
+
+# Token Schemas
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+    user_id: Optional[int] = None
+    role: Optional[UserRole] = None
+
+
+# Login Schemas
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+# Advertisement Schemas (существующие + обновление)
 class AdvertisementBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
@@ -23,6 +77,7 @@ class AdvertisementUpdate(BaseModel):
 
 class Advertisement(AdvertisementBase):
     id: int
+    owner_id: Optional[int] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -2,10 +2,70 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, asc, desc
 from typing import Optional
 from app import models, schemas
+from app.auth import get_password_hash, verify_password
 
 
-def create_advertisement(db: Session, advertisement: schemas.AdvertisementCreate):
+# User CRUD
+def get_user_by_username(db: Session, username: str):
+    return db.query(models.User).filter(models.User.username == username).first()
+
+
+def get_user_by_id(db: Session, user_id: int):
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+
+def create_user(db: Session, user: schemas.UserCreate):
+    hashed_password = get_password_hash(user.password)
+    db_user = models.User(
+        username=user.username,
+        email=user.email,
+        hashed_password=hashed_password,
+        role=models.UserRole.USER
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate):
+    db_user = get_user_by_id(db, user_id)
+    if db_user:
+        update_data = user_update.model_dump(exclude_unset=True)
+
+        if "password" in update_data:
+            update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+
+        for key, value in update_data.items():
+            setattr(db_user, key, value)
+
+        db.commit()
+        db.refresh(db_user)
+    return db_user
+
+
+def delete_user(db: Session, user_id: int):
+    db_user = get_user_by_id(db, user_id)
+    if db_user:
+        db.delete(db_user)
+        db.commit()
+        return True
+    return False
+
+
+def authenticate_user(db: Session, username: str, password: str):
+    user = get_user_by_username(db, username)
+    if not user:
+        return False
+    if not verify_password(password, user.hashed_password):
+        return False
+    return user
+
+
+def create_advertisement(db: Session, advertisement: schemas.AdvertisementCreate, owner_id: Optional[int] = None):
     db_advertisement = models.Advertisement(**advertisement.model_dump())
+    if owner_id:
+        db_advertisement.owner_id = owner_id
     db.add(db_advertisement)
     db.commit()
     db.refresh(db_advertisement)

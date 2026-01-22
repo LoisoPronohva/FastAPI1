@@ -3,7 +3,6 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
 
-# Используем PostgreSQL
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,

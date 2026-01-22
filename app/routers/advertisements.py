@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from app import crud, schemas, database
+from app import crud, schemas, auth
+from app.database import get_db
+from app.auth import get_current_user, check_user_permission
 
 router = APIRouter(prefix="/advertisement", tags=["advertisements"])
 
@@ -9,15 +11,33 @@ router = APIRouter(prefix="/advertisement", tags=["advertisements"])
 @router.post("/", response_model=schemas.Advertisement, status_code=status.HTTP_201_CREATED)
 def create_advertisement(
         advertisement: schemas.AdvertisementCreate,
-        db: Session = Depends(database.get_db)
+        current_user: Optional[schemas.UserInDB] = Depends(get_current_user),
+        db: Session = Depends(get_db)
 ):
-    return crud.create_advertisement(db=db, advertisement=advertisement)
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authentication required to create advertisements"
+        )
+
+    #Проверка роли
+    if current_user.role not in [schemas.UserRole.USER, schemas.UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to create advertisements"
+        )
+
+    return crud.create_advertisement(
+        db=db,
+        advertisement=advertisement,
+        owner_id=current_user.id
+    )
 
 
 @router.get("/{advertisement_id}", response_model=schemas.Advertisement)
 def read_advertisement(
         advertisement_id: int,
-        db: Session = Depends(database.get_db)
+        db: Session = Depends(get_db)
 ):
     db_advertisement = crud.get_advertisement(db, advertisement_id=advertisement_id)
     if db_advertisement is None:
@@ -29,27 +49,52 @@ def read_advertisement(
 def update_advertisement(
         advertisement_id: int,
         advertisement_update: schemas.AdvertisementUpdate,
-        db: Session = Depends(database.get_db)
+        current_user: schemas.UserInDB = Depends(get_current_user),
+        db: Session = Depends(get_db)
 ):
-    db_advertisement = crud.update_advertisement(
+    db_advertisement = crud.get_advertisement(db, advertisement_id=advertisement_id)
+    if db_advertisement is None:
+        raise HTTPException(status_code=404, detail="Advertisement not found")
+
+    #Проверка прав
+    if current_user.role != schemas.UserRole.ADMIN:
+        if db_advertisement.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot update other user's advertisement"
+            )
+
+    updated_advertisement = crud.update_advertisement(
         db=db,
         advertisement_id=advertisement_id,
         advertisement_update=advertisement_update
     )
-    if db_advertisement is None:
-        raise HTTPException(status_code=404, detail="Advertisement not found")
-    return db_advertisement
+
+    return updated_advertisement
 
 
 @router.delete("/{advertisement_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_advertisement(
         advertisement_id: int,
-        db: Session = Depends(database.get_db)
+        current_user: schemas.UserInDB = Depends(get_current_user),
+        db: Session = Depends(get_db)
 ):
+    db_advertisement = crud.get_advertisement(db, advertisement_id=advertisement_id)
+    if db_advertisement is None:
+        raise HTTPException(status_code=404, detail="Advertisement not found")
+
+    # Проверка прав:
+    if current_user.role != schemas.UserRole.ADMIN:
+        if db_advertisement.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot delete other user's advertisement"
+            )
+
     success = crud.delete_advertisement(db=db, advertisement_id=advertisement_id)
     if not success:
         raise HTTPException(status_code=404, detail="Advertisement not found")
-    #204 No Content не возвращается
+    return None
 
 
 @router.get("/", response_model=List[schemas.Advertisement])
@@ -64,7 +109,7 @@ def search_advertisements(
         limit: int = Query(100, ge=1, le=1000),
         sort_by: str = Query("created_at", description="Sort field (title, price, created_at, author)"),
         sort_order: str = Query("desc", description="Sort order (asc or desc)"),
-        db: Session = Depends(database.get_db)
+        db: Session = Depends(get_db)
 ):
     valid_sort_fields = ["title", "price", "created_at", "author"]
     if sort_by not in valid_sort_fields:
