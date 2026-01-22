@@ -1,13 +1,14 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import sessionmaker
+from app.config import settings
 
-#БД
-SQLALCHEMY_DATABASE_URL = "sqlite:///./advertisements.db"
-
+# Используем PostgreSQL
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},  # Только для SQLite
+    settings.DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
     echo=False
 )
 
